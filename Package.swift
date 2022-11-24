@@ -33,7 +33,7 @@ let package = Package(
             targets: ["WalletConnectNetworking"])
     ],
     dependencies: [
-        .package(url: "https://github.com/WalletConnect/Web3.swift", .exact("1.0.0"))
+        .package(url: "https://github.com/1inch/Web3.swift", from: "0.6.17")
     ],
     targets: [
         .target(
