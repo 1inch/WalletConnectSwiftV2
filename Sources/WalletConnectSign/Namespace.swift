@@ -7,11 +7,11 @@ public enum AutoNamespacesError: Error {
 
 public struct ProposalNamespace: Equatable, Codable {
 
-    public let chains: Set<Blockchain>?
-    public let methods: Set<String>
-    public let events: Set<String>
+    public let chains: [Blockchain]?
+    public let methods: [String]
+    public let events: [String]
 
-    public init(chains: Set<Blockchain>? = nil, methods: Set<String>, events: Set<String>) {
+    public init(chains: [Blockchain]? = nil, methods: [String], events: [String]) {
         self.chains = chains
         self.methods = methods
         self.events = events
@@ -19,19 +19,19 @@ public struct ProposalNamespace: Equatable, Codable {
 }
 
 public struct SessionNamespace: Equatable, Codable {
-    public var chains: Set<Blockchain>?
-    public var accounts: Set<Account>
-    public var methods: Set<String>
-    public var events: Set<String>
+    public var chains: [Blockchain]?
+    public var accounts: [Account]
+    public var methods: [String]
+    public var events: [String]
 
-    public init(chains: Set<Blockchain>? = nil, accounts: Set<Account>, methods: Set<String>, events: Set<String>) {
+    public init(chains: [Blockchain]? = nil, accounts: [Account], methods: [String], events: [String]) {
         self.chains = chains
         self.accounts = accounts
         self.methods = methods
         self.events = events
     }
 
-    static func accountsAreCompliant(_ accounts: Set<Account>, toChains chains: Set<Blockchain>) -> Bool {
+    static func accountsAreCompliant(_ accounts: [Account], toChains chains: [Blockchain]) -> Bool {
         for chain in chains {
             guard accounts.contains(where: { $0.blockchain == chain }) else {
                 return false
@@ -98,9 +98,9 @@ enum Namespace {
                     if requiredNamespaces[network] == nil {
                         requiredNamespaces[network] = proposalNamespace
                     } else {
-                        let unionChains = requiredNamespaces[network]?.chains!.union(proposalNamespace.chains ?? [])
-                        let unionMethods = requiredNamespaces[network]?.methods.union(proposalNamespace.methods)
-                        let unionEvents = requiredNamespaces[network]?.events.union(proposalNamespace.events)
+                        let unionChains = requiredNamespaces[network]?.chains!.orderedUnion(proposalNamespace.chains ?? [])
+                        let unionMethods = requiredNamespaces[network]?.methods.orderedUnion(proposalNamespace.methods)
+                        let unionEvents = requiredNamespaces[network]?.events.orderedUnion(proposalNamespace.events)
                         
                         let namespace = ProposalNamespace(chains: unionChains, methods: unionMethods ?? [], events: unionEvents ?? [])
                         requiredNamespaces[network] = namespace
@@ -147,6 +147,7 @@ enum SessionProperties {
 }
 
 public enum AutoNamespaces {
+    
     /// For a wallet to build session proposal structure by provided supported chains, methods, events & accounts.
     /// - Parameters:
     ///   - proposalId: Session Proposal id
@@ -159,173 +160,178 @@ public enum AutoNamespaces {
         accounts: [Account]
     ) throws -> [String: SessionNamespace] {
         var sessionNamespaces = [String: SessionNamespace]()
-
+        
+        let chainsSet = Set(chains)
+        let methodsSet = Set(methods)
+        let eventsSet = Set(events)
+        
         try sessionProposal.requiredNamespaces.forEach {
-            let caip2Namespace = $0.key
-            let proposalNamespace = $0.value
-
-            if let proposalChains = proposalNamespace.chains {
-                let sessionChains = Set(proposalChains).intersection(Set(chains))
-                guard !sessionChains.isEmpty else {
-                    throw AutoNamespacesError.requiredChainsNotSatisfied
-                }
-                
-                let sessionMethods = Set(proposalNamespace.methods).intersection(Set(methods))
-                guard proposalNamespace.methods.isSubset(of: Set(methods)) else {
-                    throw AutoNamespacesError.requiredMethodsNotSatisfied
-                }
-                
-                let sessionEvents = Set(proposalNamespace.events).intersection(Set(events))
-                guard proposalNamespace.events.isSubset(of: Set(events)) else {
-                    throw AutoNamespacesError.requiredEventsNotSatisfied
-                }
-                
-                let availableAccountsBlockchains = accounts.map { $0.blockchain }
-                guard !sessionChains.intersection(Set(availableAccountsBlockchains)).isEmpty else {
-                    throw AutoNamespacesError.requiredAccountsNotSatisfied
-                }
-
-                let sessionNamespace = SessionNamespace(
-                    chains: sessionChains,
-                    accounts: Set(accounts).filter { sessionChains.contains($0.blockchain) },
-                    methods: sessionMethods,
-                    events: sessionEvents
-                )
-                
-                if sessionNamespaces[caip2Namespace] == nil {
-                    sessionNamespaces[caip2Namespace] = sessionNamespace
-                } else {
-                    let unionChains = (sessionNamespaces[caip2Namespace]?.chains ?? []).union(sessionNamespace.chains ?? [])
-                    sessionNamespaces[caip2Namespace]?.chains = unionChains
-                    let unionAccounts = sessionNamespaces[caip2Namespace]?.accounts.union(sessionNamespace.accounts)
-                    sessionNamespaces[caip2Namespace]?.accounts = unionAccounts ?? []
-                    let unionMethods = sessionNamespaces[caip2Namespace]?.methods.union(sessionNamespace.methods)
-                    sessionNamespaces[caip2Namespace]?.methods = unionMethods ?? []
-                    let unionEvents = sessionNamespaces[caip2Namespace]?.events.union(sessionNamespace.events)
-                    sessionNamespaces[caip2Namespace]?.events = unionEvents ?? []
-                }
-            } else {
-                if let network = $0.key.components(separatedBy: ":").first,
-                   let chain = $0.key.components(separatedBy: ":").last
-                {
-                    let sessionChains = Set([Blockchain(namespace: network, reference: chain)]).intersection(Set(chains))
-                    guard !sessionChains.isEmpty else {
-                        throw AutoNamespacesError.requiredChainsNotSatisfied
-                    }
-                    
-                    let sessionMethods = Set(proposalNamespace.methods).intersection(Set(methods))
-                    guard proposalNamespace.methods.isSubset(of: Set(methods)) else {
-                        throw AutoNamespacesError.requiredMethodsNotSatisfied
-                    }
-                    
-                    let sessionEvents = Set(proposalNamespace.events).intersection(Set(events))
-                    guard proposalNamespace.events.isSubset(of: Set(events)) else {
-                        throw AutoNamespacesError.requiredEventsNotSatisfied
-                    }
-                    
-                    let availableAccountsBlockchains = accounts.map { $0.blockchain }
-                    guard !sessionChains.intersection(Set(availableAccountsBlockchains)).isEmpty else {
-                        throw AutoNamespacesError.requiredAccountsNotSatisfied
-                    }
-
-                    let sessionNamespace = SessionNamespace(
-                        chains: Set([Blockchain(namespace: network, reference: chain)!]),
-                        accounts: Set(accounts).filter { $0.blockchain == Blockchain(namespace: network, reference: chain)! },
-                        methods: sessionMethods,
-                        events: sessionEvents
-                    )
-                    
-                    if sessionNamespaces[network] == nil {
-                        sessionNamespaces[network] = sessionNamespace
-                    } else {
-                        let unionChains = (sessionNamespaces[network]?.chains ?? []).union(sessionNamespace.chains ?? [])
-                        sessionNamespaces[network]?.chains = unionChains
-                        let unionAccounts = sessionNamespaces[network]?.accounts.union(sessionNamespace.accounts)
-                        sessionNamespaces[network]?.accounts = unionAccounts ?? []
-                        let unionMethods = sessionNamespaces[network]?.methods.union(sessionNamespace.methods)
-                        sessionNamespaces[network]?.methods = unionMethods ?? []
-                        let unionEvents = sessionNamespaces[network]?.events.union(sessionNamespace.events)
-                        sessionNamespaces[network]?.events = unionEvents ?? []
-                    }
-                }
-            }
+            try extend(
+                sessionNamespaces: &sessionNamespaces,
+                with: $0.value,
+                caip2Namespace: $0.key,
+                isRequired: true,
+                chains: chainsSet,
+                methods: methodsSet,
+                events: eventsSet,
+                accounts: accounts
+            )
         }
         
-        sessionProposal.optionalNamespaces?.forEach {
-            let caip2Namespace = $0.key
-            let proposalNamespace = $0.value
-
-            if let proposalChains = proposalNamespace.chains {
-                let sessionChains = Set(proposalChains).intersection(Set(chains))
-                guard !sessionChains.isEmpty else {
-                    return
-                }
-                
-                let sessionMethods = Set(proposalNamespace.methods).intersection(Set(methods))
-                guard !sessionMethods.isEmpty else {
-                    return
-                }
-
-                let sessionEvents = Set(proposalNamespace.events).intersection(Set(events))
-
-                let sessionNamespace = SessionNamespace(
-                    chains: sessionChains,
-                    accounts: Set(accounts).filter { sessionChains.contains($0.blockchain) },
-                    methods: sessionMethods,
-                    events: sessionEvents
-                )
-                
-                if sessionNamespaces[caip2Namespace] == nil {
-                    sessionNamespaces[caip2Namespace] = sessionNamespace
-                } else {
-                    let unionChains = (sessionNamespaces[caip2Namespace]?.chains ?? []).union(sessionNamespace.chains ?? [])
-                    sessionNamespaces[caip2Namespace]?.chains = unionChains
-                    let unionAccounts = sessionNamespaces[caip2Namespace]?.accounts.union(sessionNamespace.accounts)
-                    sessionNamespaces[caip2Namespace]?.accounts = unionAccounts ?? []
-                    let unionMethods = sessionNamespaces[caip2Namespace]?.methods.union(sessionNamespace.methods)
-                    sessionNamespaces[caip2Namespace]?.methods = unionMethods ?? []
-                    let unionEvents = sessionNamespaces[caip2Namespace]?.events.union(sessionNamespace.events)
-                    sessionNamespaces[caip2Namespace]?.events = unionEvents ?? []
-                }
-            } else {
-                if let network = $0.key.components(separatedBy: ":").first,
-                   let chain = $0.key.components(separatedBy: ":").last
-                {
-                    let sessionChains = Set([Blockchain(namespace: network, reference: chain)]).intersection(Set(chains))
-                    guard !sessionChains.isEmpty else {
-                        return
-                    }
-                    
-                    let sessionMethods = Set(proposalNamespace.methods).intersection(Set(methods))
-                    guard !sessionMethods.isEmpty else {
-                        return
-                    }
-                    
-                    let sessionEvents = Set(proposalNamespace.events).intersection(Set(events))
-                    
-                    let sessionNamespace = SessionNamespace(
-                        chains: Set([Blockchain(namespace: network, reference: chain)!]),
-                        accounts: Set(accounts).filter { $0.blockchain == Blockchain(namespace: network, reference: chain)! },
-                        methods: sessionMethods,
-                        events: sessionEvents
-                    )
-                    
-                    if sessionNamespaces[network] == nil {
-                        sessionNamespaces[network] = sessionNamespace
-                    } else {
-                        let unionChains = (sessionNamespaces[network]?.chains ?? []).union(sessionNamespace.chains ?? [])
-                        sessionNamespaces[network]?.chains = unionChains
-                        let unionAccounts = sessionNamespaces[network]?.accounts.union(sessionNamespace.accounts)
-                        sessionNamespaces[network]?.accounts = unionAccounts ?? []
-                        let unionMethods = sessionNamespaces[network]?.methods.union(sessionNamespace.methods)
-                        sessionNamespaces[network]?.methods = unionMethods ?? []
-                        let unionEvents = sessionNamespaces[network]?.events.union(sessionNamespace.events)
-                        sessionNamespaces[network]?.events = unionEvents ?? []
-                    }
-                }
-            }
+        try sessionProposal.optionalNamespaces?.forEach {
+            try extend(
+                sessionNamespaces: &sessionNamespaces,
+                with: $0.value,
+                caip2Namespace: $0.key,
+                isRequired: false,
+                chains: chainsSet,
+                methods: methodsSet,
+                events: eventsSet,
+                accounts: accounts
+            )
         }
         
         return sessionNamespaces
+    }
+    
+    private static func extend(
+        sessionNamespaces: inout [String: SessionNamespace],
+        with proposalNamespace: ProposalNamespace,
+        caip2Namespace: String,
+        isRequired: Bool,
+        chains: Set<Blockchain>,
+        methods: Set<String>,
+        events: Set<String>,
+        accounts: [Account]
+    ) throws {
+        var pair: (key: String, proposal: ProposalNamespace)? = nil
+        
+        if proposalNamespace.chains != nil {
+            pair = (caip2Namespace, proposalNamespace)
+        }
+        else {
+            if let network = caip2Namespace.components(separatedBy: ":").first,
+               let chain = caip2Namespace.components(separatedBy: ":").last,
+               let blockchain = Blockchain(namespace: network, reference: chain) {
+                let proposal = ProposalNamespace(
+                    chains: [blockchain],
+                    methods: proposalNamespace.methods,
+                    events: proposalNamespace.events
+                )
+                pair = (network, proposal)
+            }
+        }
+        
+        guard
+            let pair = pair,
+            let sessionNamespace = try createSessionNamespace(
+                for: pair.proposal,
+                isRequired: isRequired,
+                chains: chains,
+                methods: methods,
+                events: events,
+                accounts: accounts
+            )
+        else {
+            return
+        }
+        
+        if var existingNamespace = sessionNamespaces[pair.key] {
+            existingNamespace.chains = union(existingNamespace.chains, with: sessionNamespace.chains)
+            existingNamespace.accounts = union(existingNamespace.accounts, with: sessionNamespace.accounts)
+            existingNamespace.methods = union(existingNamespace.methods, with: sessionNamespace.methods)
+            existingNamespace.events = union(existingNamespace.events, with: sessionNamespace.events)
+            sessionNamespaces[pair.key] = existingNamespace
+        } else {
+            sessionNamespaces[pair.key] = sessionNamespace
+        }
+    }
+    
+    private static func createSessionNamespace(
+        for proposalNamespace: ProposalNamespace,
+        isRequired: Bool,
+        chains: Set<Blockchain>,
+        methods: Set<String>,
+        events: Set<String>,
+        accounts: [Account]
+    ) throws -> SessionNamespace? {
+        guard let proposalChains = proposalNamespace.chains else {
+            fatalError("Invalid invariant")
+        }
+        
+        let sessionChains = proposalChains.filter { chains.contains($0) }
+        guard !sessionChains.isEmpty else {
+            if isRequired {
+                throw AutoNamespacesError.requiredChainsNotSatisfied
+            }
+            else {
+                return nil
+            }
+        }
+        
+        let sessionMethods = proposalNamespace.methods.filter { methods.contains($0) }
+        if isRequired {
+            guard Set(proposalNamespace.methods).isSubset(of: methods) else {
+                throw AutoNamespacesError.requiredMethodsNotSatisfied
+            }
+        }
+        else {
+            guard !sessionMethods.isEmpty else {
+                return nil
+            }
+        }
+        
+        let sessionEvents = proposalNamespace.events.filter { events.contains($0) }
+        if isRequired {
+            guard Set(proposalNamespace.events).isSubset(of: events) else {
+                throw AutoNamespacesError.requiredEventsNotSatisfied
+            }
+            
+            let availableAccountsBlockchains = Set(accounts.map(\.blockchain))
+            guard !Set(sessionChains).intersection(availableAccountsBlockchains).isEmpty else {
+                throw AutoNamespacesError.requiredAccountsNotSatisfied
+            }
+        }
+        
+        let sessionAccounts = accounts.filter { sessionChains.contains($0.blockchain) }
+        
+        let sessionNamespace = SessionNamespace(
+            chains: sessionChains,
+            accounts: sessionAccounts,
+            methods: sessionMethods,
+            events: sessionEvents
+        )
+        
+        return sessionNamespace
+    }
+    
+    private static func union<T: Hashable>(_ existing: [T]?, with new: [T]?) -> [T] {
+        existing?.orderedUnion(new ?? []) ?? new ?? []
+    }
+}
+
+private extension Array where Element: Hashable {
+    func orderedUnion(_ other: [Element]) -> [Element] {
+        if isEmpty {
+            return other
+        }
+        
+        if other.isEmpty {
+            return self
+        }
+        
+        var unionArray: [Element] = []
+        var existingElements = Set<Element>()
+        
+        for array in [self, other] {
+            for element in array {
+                if !existingElements.contains(element) {
+                    unionArray.append(element)
+                    existingElements.insert(element)
+                }
+            }
+        }
+        
+        return unionArray
     }
 }

@@ -132,8 +132,8 @@ struct WCSession: SequenceObject, Equatable {
             guard
                 let compliantNamespace = namespaces[item.key],
                 SessionNamespace.accountsAreCompliant(compliantNamespace.accounts, toChains: item.value.chains!),
-                compliantNamespace.methods.isSuperset(of: item.value.methods),
-                compliantNamespace.events.isSuperset(of: item.value.events)
+                Set(compliantNamespace.methods).isSuperset(of: item.value.methods),
+                Set(compliantNamespace.events).isSuperset(of: item.value.events)
             else {
                 throw Error.unsatisfiedUpdateNamespaceRequirement
             }
